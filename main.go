@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -56,7 +55,7 @@ func float64ToISOString(timestamp float64) string {
 func printStructAsColoredJson(v interface{}) error {
 	valueAsMap, ok := v.(map[string]any)
 	if !ok {
-		return errors.New(fmt.Sprintf("payload must be an object, got %s", v))
+		return fmt.Errorf("payload must be an object, got %s", v)
 	}
 
 	keysSorted := sortedMapKeys(valueAsMap)
