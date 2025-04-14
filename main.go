@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -53,7 +54,11 @@ func float64ToISOString(timestamp float64) string {
 }
 
 func printStructAsColoredJson(v interface{}) error {
-	valueAsMap := v.(map[string]any)
+	valueAsMap, ok := v.(map[string]any)
+	if !ok {
+		return errors.New(fmt.Sprintf("payload must be an object, got %s", v))
+	}
+
 	keysSorted := sortedMapKeys(valueAsMap)
 
 	fmt.Println("{")
@@ -76,27 +81,37 @@ func printStructAsColoredJson(v interface{}) error {
 			fmt.Print(colorBool) // color of string
 			fmt.Printf("%s", strconv.FormatBool(vAsBool))
 			fmt.Print(colorReset) // reset
+
+			if item != size-1 {
+				fmt.Print(",")
+			}
+
 		case "float64":
 			vAsFloat64 := value.(float64)
 			fmt.Print(colorNumber) // color of string
 			fmt.Printf("%s", strconv.FormatFloat(vAsFloat64, 'f', -1, 64))
 			fmt.Print(colorReset) // reset
 
+			if item != size-1 {
+				fmt.Print(",")
+			}
+
 			if vAsFloat64 > 1_000_000_000 && vAsFloat64 < 10_000_000_000 {
-				fmt.Print("  ")
+				fmt.Print(" ")
 				fmt.Print(colorGray)
 				fmt.Print("# ")
 				fmt.Print(float64ToISOString(vAsFloat64))
 				fmt.Print(colorReset)
 			}
+
 		default:
 			fmt.Print(colorString) // color of string
 			fmt.Printf("\"%s\"", value)
 			fmt.Print(colorReset) // reset
-		}
 
-		if item != size-1 {
-			fmt.Print(",")
+			if item != size-1 {
+				fmt.Print(",")
+			}
 		}
 
 		fmt.Print("\n")
@@ -110,43 +125,42 @@ func printStructAsColoredJson(v interface{}) error {
 }
 
 func main() {
-	// 1. Check for the JWT token as a command-line argument.
 	if len(os.Args) != 2 {
 		fmt.Println("Usage: jwtdecode <jwt_token>")
 		return
 	}
 	tokenString := os.Args[1]
 
-	// 2. Split the JWT token by the '.' character.
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
 		fmt.Println("Error: Invalid JWT format. Expected 3 parts.")
 		return
 	}
 
-	// 3. Base64 decode the header (part 1).
 	headerBytes, err := base64Decode(parts[0])
 	if err != nil {
 		fmt.Println("Error decoding header:", err)
 		return
 	}
-
-	// 4. Base64 decode the payload (part 2).
-	payloadBytes, err := base64Decode(parts[1])
-	if err != nil {
-		fmt.Println("Error decoding payload:", err)
-		return
-	}
-
-	// 5. JSON unmarshal the header.
-	var headerData interface{} // Use interface{} to handle arbitrary JSON structure.
+	var headerData interface{}
 	err = json.Unmarshal(headerBytes, &headerData)
 	if err != nil {
 		fmt.Println("Error unmarshaling header:", err)
 		return
 	}
 
-	// 6. JSON unmarshal the payload.
+	fmt.Println("Header:")
+
+	if err := printStructAsColoredJson(headerData); err != nil {
+
+	}
+
+	payloadBytes, err := base64Decode(parts[1])
+	if err != nil {
+		fmt.Println("Error decoding payload:", err)
+		return
+	}
+
 	var payloadData interface{} // Use interface{} to handle arbitrary JSON structure.
 	err = json.Unmarshal(payloadBytes, &payloadData)
 	if err != nil {
@@ -154,16 +168,13 @@ func main() {
 		return
 	}
 
-	// 7. Print the header and payload.
-	fmt.Println("Header:")
-
-	printStructAsColoredJson(headerData)
-
 	fmt.Println()
 
 	fmt.Println("Payload:")
 
-	printStructAsColoredJson(payloadData)
+	if err := printStructAsColoredJson(payloadData); err != nil {
+
+	}
 
 	fmt.Println()
 }
