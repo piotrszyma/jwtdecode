@@ -112,7 +112,7 @@ func printStructAsColoredJson(v interface{}) error {
 func main() {
 	// 1. Check for the JWT token as a command-line argument.
 	if len(os.Args) != 2 {
-		fmt.Println("Usage: go run main.go <jwt_token>")
+		fmt.Println("Usage: jwtdecode <jwt_token>")
 		return
 	}
 	tokenString := os.Args[1]
