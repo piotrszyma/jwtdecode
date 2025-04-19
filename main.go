@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"sort"
@@ -11,6 +13,9 @@ import (
 	"strings"
 	"time"
 )
+
+// Ugly & fast way to expose ability for mocking time in tests.
+var timeNow time.Time
 
 const (
 	colorReset  = "\033[0m"
@@ -53,7 +58,7 @@ func float64TimestampToTimeUtc(timestamp float64) time.Time {
 }
 
 func humanReadableDelta(t time.Time) string {
-	now := time.Now().UTC()
+	now := timeNow.UTC()
 	diff := now.Sub(t)
 	absDiff := diff
 	if diff < 0 {
@@ -96,7 +101,7 @@ func humanReadableDelta(t time.Time) string {
 	return fmt.Sprintf("%d day(s) ago", days)
 }
 
-func printStructAsColoredJson(v interface{}) error {
+func printStructAsColoredJson(writer io.Writer, v interface{}) error {
 	valueAsMap, ok := v.(map[string]any)
 	if !ok {
 		return fmt.Errorf("payload must be an object, got %s", v)
@@ -104,7 +109,7 @@ func printStructAsColoredJson(v interface{}) error {
 
 	keysSorted := sortedMapKeys(valueAsMap)
 
-	fmt.Println("{")
+	fmt.Fprintln(writer, "{")
 
 	size := len(valueAsMap)
 	item := 0
@@ -112,66 +117,111 @@ func printStructAsColoredJson(v interface{}) error {
 	for _, key := range keysSorted {
 		value := valueAsMap[key]
 
-		fmt.Print("  ")           // indent
-		fmt.Print(colorBlue)      // color of key
-		fmt.Printf("\"%s\"", key) // key escaped
-		fmt.Print(colorReset)     // reset
-		fmt.Print(": ")
+		fmt.Fprint(writer, "  ")           // indent
+		fmt.Fprint(writer, colorBlue)      // color of key
+		fmt.Fprintf(writer, "\"%s\"", key) // key escaped
+		fmt.Fprint(writer, colorReset)     // reset
+		fmt.Fprint(writer, ": ")
 
 		switch reflect.TypeOf(value).String() {
 		case "bool":
 			vAsBool := value.(bool)
-			fmt.Print(colorCyan) // color of string
-			fmt.Printf("%s", strconv.FormatBool(vAsBool))
-			fmt.Print(colorReset) // reset
+			fmt.Fprint(writer, colorCyan) // color of string
+			fmt.Fprintf(writer, "%s", strconv.FormatBool(vAsBool))
+			fmt.Fprint(writer, colorReset) // reset
 
 			if item != size-1 {
-				fmt.Print(",")
+				fmt.Fprint(writer, ",")
 			}
 
 		case "float64":
 			vAsFloat64 := value.(float64)
-			fmt.Print(colorYellow) // color of string
-			fmt.Printf("%s", strconv.FormatFloat(vAsFloat64, 'f', -1, 64))
-			fmt.Print(colorReset) // reset
+			fmt.Fprint(writer, colorYellow) // color of string
+			fmt.Fprintf(writer, "%s", strconv.FormatFloat(vAsFloat64, 'f', -1, 64))
+			fmt.Fprint(writer, colorReset) // reset
 
 			if item != size-1 {
-				fmt.Print(",")
+				fmt.Fprint(writer, ",")
 			}
 
 			if vAsFloat64 > 1_000_000_000 && vAsFloat64 < 10_000_000_000 {
 				vAsTime := float64TimestampToTimeUtc(vAsFloat64)
 				timeDeltaUntilNow := humanReadableDelta(vAsTime)
 
-				fmt.Print(" ")
-				fmt.Print(colorGray)
-				fmt.Print("# ")
-				fmt.Print(timeToISOString(vAsTime))
-				fmt.Print(colorRed)
-				fmt.Print(" ")
-				fmt.Print("[")
-				fmt.Print(timeDeltaUntilNow)
-				fmt.Print("]")
-				fmt.Print(" ")
-				fmt.Print(colorReset)
+				fmt.Fprint(writer, " ")
+				fmt.Fprint(writer, colorGray)
+				fmt.Fprint(writer, "# ")
+				fmt.Fprint(writer, timeToISOString(vAsTime))
+				fmt.Fprint(writer, colorRed)
+				fmt.Fprint(writer, " ")
+				fmt.Fprint(writer, "[")
+				fmt.Fprint(writer, timeDeltaUntilNow)
+				fmt.Fprint(writer, "]")
+				fmt.Fprint(writer, colorReset)
 			}
 
 		default:
-			fmt.Print(colorGreen) // color of string
-			fmt.Printf("\"%s\"", value)
-			fmt.Print(colorReset) // reset
+			fmt.Fprint(writer, colorGreen) // color of string
+			fmt.Fprintf(writer, "\"%s\"", value)
+			fmt.Fprint(writer, colorReset) // reset
 
 			if item != size-1 {
-				fmt.Print(",")
+				fmt.Fprint(writer, ",")
 			}
 		}
 
-		fmt.Print("\n")
+		fmt.Fprint(writer, "\n")
 
 		item += 1
 	}
 
-	fmt.Println("}")
+	fmt.Fprintln(writer, "}")
+
+	return nil
+}
+
+func writeClaimsFromJwt(writer io.Writer, tokenString string) error {
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 {
+		return errors.New("error: invalid JWT format, expected 3 parts")
+	}
+
+	headerBytes, err := base64Decode(parts[0])
+	if err != nil {
+		return fmt.Errorf("error decoding header: %s", err)
+	}
+	var headerData interface{}
+	err = json.Unmarshal(headerBytes, &headerData)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling header: %s", err)
+	}
+
+	fmt.Fprintln(writer, "Header:")
+
+	if err := printStructAsColoredJson(writer, headerData); err != nil {
+		return fmt.Errorf("failed to print struct = %s", err)
+	}
+
+	payloadBytes, err := base64Decode(parts[1])
+	if err != nil {
+		return fmt.Errorf("error decoding payload: %s", err)
+	}
+
+	var payloadData interface{} // Use interface{} to handle arbitrary JSON structure.
+	err = json.Unmarshal(payloadBytes, &payloadData)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling payload: %s", err)
+	}
+
+	fmt.Fprintln(writer)
+
+	fmt.Fprintln(writer, "Payload:")
+
+	if err := printStructAsColoredJson(writer, payloadData); err != nil {
+		return fmt.Errorf("failed to print payload = %s", err)
+	}
+
+	fmt.Fprintln(writer)
 
 	return nil
 }
@@ -181,52 +231,14 @@ func main() {
 		fmt.Println("Usage: jwtdecode <jwt_token>")
 		return
 	}
+
 	tokenString := os.Args[1]
 
-	parts := strings.Split(tokenString, ".")
-	if len(parts) != 3 {
-		fmt.Println("Error: Invalid JWT format. Expected 3 parts.")
-		return
+	if err := writeClaimsFromJwt(os.Stdout, tokenString); err != nil {
+		fmt.Printf("failed to write claims = %d", err)
 	}
+}
 
-	headerBytes, err := base64Decode(parts[0])
-	if err != nil {
-		fmt.Println("Error decoding header:", err)
-		return
-	}
-	var headerData interface{}
-	err = json.Unmarshal(headerBytes, &headerData)
-	if err != nil {
-		fmt.Println("Error unmarshaling header:", err)
-		return
-	}
-
-	fmt.Println("Header:")
-
-	if err := printStructAsColoredJson(headerData); err != nil {
-
-	}
-
-	payloadBytes, err := base64Decode(parts[1])
-	if err != nil {
-		fmt.Println("Error decoding payload:", err)
-		return
-	}
-
-	var payloadData interface{} // Use interface{} to handle arbitrary JSON structure.
-	err = json.Unmarshal(payloadBytes, &payloadData)
-	if err != nil {
-		fmt.Println("Error unmarshaling payload:", err)
-		return
-	}
-
-	fmt.Println()
-
-	fmt.Println("Payload:")
-
-	if err := printStructAsColoredJson(payloadData); err != nil {
-
-	}
-
-	fmt.Println()
+func init() {
+	timeNow = time.Now()
 }
