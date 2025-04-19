@@ -14,13 +14,12 @@ import (
 
 const (
 	colorReset  = "\033[0m"
-	colorKey    = "\033[34m" // Blue
-	colorString = "\033[32m" // Green
-	colorNumber = "\033[33m" // Yellow
-	colorBool   = "\033[36m" // Cyan
-	colorNull   = "\033[31m" // Red
+	colorBlue   = "\033[34m" // Blue
+	colorGreen  = "\033[32m" // Green
+	colorYellow = "\033[33m" // Yellow
+	colorCyan   = "\033[36m" // Cyan
+	colorRed    = "\033[31m" // Red
 	colorGray   = "\033[90m" // Dark Gray
-	colorError  = "\033[31m" // Red
 )
 
 // Helper function to base64 decode a string
@@ -42,14 +41,59 @@ func sortedMapKeys(m map[string]interface{}) []string {
 	return keys
 }
 
-func float64ToISOString(timestamp float64) string {
+func timeToISOString(value time.Time) string {
+	// Format time.Time to ISO 8601 string
+	return value.Format(time.RFC3339Nano) //Use RFC3339Nano for most precision
+}
+
+func float64TimestampToTimeUtc(timestamp float64) time.Time {
 	// Convert float64 timestamp (seconds since epoch) to time.Time
 	t := time.Unix(int64(timestamp), int64((timestamp-float64(int64(timestamp)))*float64(time.Second)))
+	return t.UTC()
+}
 
-	// Format time.Time to ISO 8601 string
-	isoString := t.UTC().Format(time.RFC3339Nano) //Use RFC3339Nano for most precision
+func humanReadableDelta(t time.Time) string {
+	now := time.Now().UTC()
+	diff := now.Sub(t)
+	absDiff := diff
+	if diff < 0 {
+		absDiff = -diff
+	}
 
-	return isoString
+	if absDiff < time.Minute {
+		if diff < 0 {
+			return "in less than a minute"
+		}
+		return "less than a minute ago"
+	}
+
+	if absDiff < time.Hour {
+		minutes := int(absDiff.Minutes())
+		if diff < 0 {
+			return fmt.Sprintf("in %d minute(s)", minutes)
+		}
+
+		return fmt.Sprintf("%d minute(s) ago", minutes)
+	}
+
+	if absDiff < 24*time.Hour {
+		hours := int(absDiff.Hours())
+		if diff < 0 {
+			return fmt.Sprintf("in %d hour(s)", hours)
+		}
+
+		if diff == 1 {
+			return fmt.Sprintf("%d hour ago", hours)
+		}
+
+		return fmt.Sprintf("%d hour(s) ago", hours)
+	}
+
+	days := int(absDiff.Hours() / 24)
+	if diff < 0 {
+		return fmt.Sprintf("in %d day(s)", days)
+	}
+	return fmt.Sprintf("%d day(s) ago", days)
 }
 
 func printStructAsColoredJson(v interface{}) error {
@@ -69,7 +113,7 @@ func printStructAsColoredJson(v interface{}) error {
 		value := valueAsMap[key]
 
 		fmt.Print("  ")           // indent
-		fmt.Print(colorKey)       // color of key
+		fmt.Print(colorBlue)      // color of key
 		fmt.Printf("\"%s\"", key) // key escaped
 		fmt.Print(colorReset)     // reset
 		fmt.Print(": ")
@@ -77,7 +121,7 @@ func printStructAsColoredJson(v interface{}) error {
 		switch reflect.TypeOf(value).String() {
 		case "bool":
 			vAsBool := value.(bool)
-			fmt.Print(colorBool) // color of string
+			fmt.Print(colorCyan) // color of string
 			fmt.Printf("%s", strconv.FormatBool(vAsBool))
 			fmt.Print(colorReset) // reset
 
@@ -87,7 +131,7 @@ func printStructAsColoredJson(v interface{}) error {
 
 		case "float64":
 			vAsFloat64 := value.(float64)
-			fmt.Print(colorNumber) // color of string
+			fmt.Print(colorYellow) // color of string
 			fmt.Printf("%s", strconv.FormatFloat(vAsFloat64, 'f', -1, 64))
 			fmt.Print(colorReset) // reset
 
@@ -96,15 +140,24 @@ func printStructAsColoredJson(v interface{}) error {
 			}
 
 			if vAsFloat64 > 1_000_000_000 && vAsFloat64 < 10_000_000_000 {
+				vAsTime := float64TimestampToTimeUtc(vAsFloat64)
+				timeDeltaUntilNow := humanReadableDelta(vAsTime)
+
 				fmt.Print(" ")
 				fmt.Print(colorGray)
 				fmt.Print("# ")
-				fmt.Print(float64ToISOString(vAsFloat64))
+				fmt.Print(timeToISOString(vAsTime))
+				fmt.Print(colorRed)
+				fmt.Print(" ")
+				fmt.Print("[")
+				fmt.Print(timeDeltaUntilNow)
+				fmt.Print("]")
+				fmt.Print(" ")
 				fmt.Print(colorReset)
 			}
 
 		default:
-			fmt.Print(colorString) // color of string
+			fmt.Print(colorGreen) // color of string
 			fmt.Printf("\"%s\"", value)
 			fmt.Print(colorReset) // reset
 
