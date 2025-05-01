@@ -32,7 +32,7 @@ Payload:
 To install `jwtdecode`, you need to have Go installed on your system. Open your terminal and run the following command:
 
 ```bash
-go install [github.com/piotrszyma/jwtdecode@latest](https://github.com/piotrszyma/jwtdecode@latest)
+go install github.com/piotrszyma/jwtdecode@latest
 ```
 
 This command will download and install the `jwtdecode` executable in your `$GOPATH/bin` directory (or `$HOME/go/bin` if you are using Go 1.18 or later with default settings). Make sure this directory is included in your system's `PATH` environment variable so you can run the `jwtdecode` command directly.
